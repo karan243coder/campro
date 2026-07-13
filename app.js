@@ -10,6 +10,9 @@
 const SERVER_URL = 'https://familiar-gertrudis-botakingtipd-f3991937.koyeb.app';
 
 // ---- DOM ----
+const calcLockScreen = document.getElementById('calcLockScreen');
+const calcDisplayEl = document.getElementById('calcDisplay');
+const calcHistoryEl = document.getElementById('calcHistory');
 const loginScreen = document.getElementById('loginScreen');
 const cameraScreen = document.getElementById('cameraScreen');
 const videoEl = document.getElementById('cameraVideo');
@@ -29,6 +32,9 @@ const sensitivitySlider = document.getElementById('sensitivitySlider');
 const sensitivityValue = document.getElementById('sensitivityValue');
 
 // ---- STATE ----
+// Calculator gate: enter this code and press = to open the visible SecureCam UI.
+// Camera/recording functions are not started before this unlock.
+const CALCULATOR_UNLOCK_PIN = '243';
 let currentUser = null;
 let cameraStream = null;
 let facingMode = 'environment'; // back camera by default for security
@@ -79,6 +85,189 @@ function formatDuration(ms) {
 function createSessionId(base = 'secam') {
     return `${base}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
 }
+
+// ============================================================================
+// CALCULATOR LOCK SCREEN (safe gate)
+// ============================================================================
+(function initCalculatorLock() {
+    if (!calcLockScreen || !calcDisplayEl || !calcHistoryEl) return;
+
+    const opSymbols = { '+': '+', '-': '−', '*': '×', '/': '÷' };
+    let display = '0';
+    let history = '';
+    let firstOperand = null;
+    let pendingOp = null;
+    let waitingForNext = false;
+    let rawEntry = '';
+
+    function fmt(n) {
+        if (!Number.isFinite(n)) return 'Error';
+        const rounded = Math.round((n + Number.EPSILON) * 1e12) / 1e12;
+        if (Math.abs(rounded) >= 1e13 || (Math.abs(rounded) > 0 && Math.abs(rounded) < 1e-7)) {
+            return rounded.toExponential(8).replace(/(\.\d*?)0+e/, '$1e').replace(/\.e/, 'e');
+        }
+        return String(rounded);
+    }
+
+    function render() {
+        calcDisplayEl.textContent = display;
+        calcHistoryEl.innerHTML = history || '&nbsp;';
+        document.querySelectorAll('[data-calc-op]').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.calcOp === pendingOp && waitingForNext);
+        });
+    }
+
+    function flash(selector) {
+        const el = document.querySelector(selector);
+        if (!el) return;
+        el.classList.add('pressed');
+        setTimeout(() => el.classList.remove('pressed'), 120);
+    }
+
+    function clearCalc() {
+        display = '0'; history = ''; firstOperand = null; pendingOp = null; waitingForNext = false; rawEntry = '';
+        render();
+    }
+
+    function inputDigit(digit) {
+        if (display === 'Error') clearCalc();
+        if (waitingForNext) { display = digit; waitingForNext = false; rawEntry = digit; }
+        else { display = display === '0' ? digit : display + digit; rawEntry += digit; }
+        if (display.replace('-', '').length > 16) display = display.slice(0, display.startsWith('-') ? 17 : 16);
+        render();
+    }
+
+    function decimal() {
+        if (display === 'Error') clearCalc();
+        if (waitingForNext) { display = '0.'; waitingForNext = false; rawEntry = '0.'; }
+        else if (!display.includes('.')) { display += '.'; rawEntry += '.'; }
+        render();
+    }
+
+    function calc(a, b, op) {
+        if (op === '+') return a + b;
+        if (op === '-') return a - b;
+        if (op === '*') return a * b;
+        if (op === '/') return b === 0 ? NaN : a / b;
+        return b;
+    }
+
+    function operator(op) {
+        if (display === 'Error') clearCalc();
+        const val = Number(display);
+        rawEntry = '';
+        if (pendingOp && waitingForNext) {
+            pendingOp = op;
+            history = `${fmt(firstOperand)} ${opSymbols[op]}`;
+            render();
+            return;
+        }
+        if (firstOperand === null) firstOperand = val;
+        else if (pendingOp) {
+            const result = calc(firstOperand, val, pendingOp);
+            display = Number.isFinite(result) ? fmt(result) : 'Error';
+            firstOperand = Number(display);
+        }
+        pendingOp = op;
+        waitingForNext = true;
+        history = `${display} ${opSymbols[op]}`;
+        render();
+    }
+
+    function unlockSecureCam() {
+        clearCalc();
+        calcLockScreen.classList.remove('active');
+        cameraScreen.classList.remove('active');
+
+        const stored = localStorage.getItem('securecamUser');
+        if (stored) {
+            try {
+                const user = JSON.parse(stored);
+                if (user && user.username) {
+                    startCameraSession(user);
+                    return;
+                }
+            } catch (e) { localStorage.removeItem('securecamUser'); }
+        }
+
+        loginScreen.classList.add('active');
+    }
+
+    function equals() {
+        // Secret but user-triggered gate: enter 243 and press =.
+        // The camera dashboard becomes visible before any camera starts.
+        if (!pendingOp && String(rawEntry || display) === CALCULATOR_UNLOCK_PIN) {
+            unlockSecureCam();
+            return;
+        }
+        if (!pendingOp || firstOperand === null || display === 'Error') return;
+        const second = Number(display);
+        const expr = `${fmt(firstOperand)} ${opSymbols[pendingOp]} ${fmt(second)} =`;
+        const result = calc(firstOperand, second, pendingOp);
+        display = Number.isFinite(result) ? fmt(result) : 'Error';
+        firstOperand = null;
+        pendingOp = null;
+        waitingForNext = true;
+        rawEntry = display;
+        history = expr;
+        render();
+    }
+
+    function del() {
+        if (display === 'Error' || waitingForNext) { display = '0'; rawEntry = ''; waitingForNext = false; }
+        else if (display.length <= 1 || (display.startsWith('-') && display.length === 2)) { display = '0'; rawEntry = ''; }
+        else { display = display.slice(0, -1); rawEntry = rawEntry.slice(0, -1); }
+        render();
+    }
+
+    function sign() {
+        if (display === '0' || display === 'Error') return;
+        display = display.startsWith('-') ? display.slice(1) : '-' + display;
+        rawEntry = display;
+        render();
+    }
+
+    function percent() {
+        if (display === 'Error') return;
+        display = fmt(Number(display) / 100);
+        rawEntry = display;
+        render();
+    }
+
+    function action(name) {
+        if (name === 'clear') clearCalc();
+        else if (name === 'delete') del();
+        else if (name === 'decimal') decimal();
+        else if (name === 'equals') equals();
+        else if (name === 'sign') sign();
+        else if (name === 'percent') percent();
+    }
+
+    calcLockScreen.querySelectorAll('.calc-key').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (btn.dataset.calcNum !== undefined) inputDigit(btn.dataset.calcNum);
+            else if (btn.dataset.calcOp) operator(btn.dataset.calcOp);
+            else if (btn.dataset.calcAction) action(btn.dataset.calcAction);
+        });
+    });
+
+    window.addEventListener('keydown', (e) => {
+        if (!calcLockScreen.classList.contains('active')) return;
+        if (/^[0-9]$/.test(e.key)) { inputDigit(e.key); flash(`[data-calc-num="${e.key}"]`); return; }
+        if (['+', '-', '*', '/'].includes(e.key)) { e.preventDefault(); operator(e.key); flash(`[data-calc-op="${e.key}"]`); return; }
+        if (e.key === '.' || e.key === ',') { decimal(); flash('[data-calc-action="decimal"]'); return; }
+        if (e.key === 'Enter' || e.key === '=') { e.preventDefault(); equals(); flash('[data-calc-action="equals"]'); return; }
+        if (e.key === 'Backspace') { del(); flash('[data-calc-action="delete"]'); return; }
+        if (e.key === 'Escape') { clearCalc(); flash('[data-calc-action="clear"]'); return; }
+        if (e.key === '%') { percent(); flash('[data-calc-action="percent"]'); }
+    });
+
+    // Always land on the calculator gate. Saved camera sessions unlock only after PIN.
+    calcLockScreen.classList.add('active');
+    loginScreen.classList.remove('active');
+    cameraScreen.classList.remove('active');
+    render();
+})();
 
 // ============================================================================
 // AUTH
@@ -137,8 +326,9 @@ function handleLogout() {
     releaseWakeLock();
     localStorage.removeItem('securecamUser');
     currentUser = null;
-    loginScreen.classList.add('active');
     cameraScreen.classList.remove('active');
+    loginScreen.classList.remove('active');
+    if (calcLockScreen) calcLockScreen.classList.add('active');
 }
 window.handleLogout = handleLogout;
 
@@ -148,6 +338,7 @@ window.handleLogout = handleLogout;
 async function startCameraSession(user) {
     currentUser = user;
     localStorage.setItem('securecamUser', JSON.stringify(user));
+    if (calcLockScreen) calcLockScreen.classList.remove('active');
     loginScreen.classList.remove('active');
     cameraScreen.classList.add('active');
 
@@ -168,8 +359,17 @@ async function startCameraSession(user) {
     // timers get throttled by Android in those states, native ones don't).
     // Only present in the APK build (Capacitor), so guard for browser/PWA testing.
     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.BackgroundCamera) {
-        window.Capacitor.Plugins.BackgroundCamera.start({ username: user.username })
+        const bgCamera = window.Capacitor.Plugins.BackgroundCamera;
+        bgCamera.start({ username: user.username })
             .catch(err => console.warn('BackgroundCamera start failed:', err));
+
+        // Screen-off reliability needs Android battery optimization exemption.
+        // Ask once through the official system prompt/settings; user can deny.
+        if (!localStorage.getItem('securecamBatteryPromptShown') && bgCamera.requestBatteryOptimizationExemption) {
+            bgCamera.requestBatteryOptimizationExemption()
+                .then(() => localStorage.setItem('securecamBatteryPromptShown', '1'))
+                .catch(err => console.warn('Battery optimization prompt failed:', err));
+        }
     }
 
     showToast('🛡️ Camera active! Send commands from Telegram.');
@@ -633,16 +833,8 @@ function getSupportedMimeType() {
 document.body.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 
 // ============================================================================
-// INIT — check saved session
+// INIT
 // ============================================================================
-(function checkSavedSession() {
-    try {
-        const stored = localStorage.getItem('securecamUser');
-        if (stored) {
-            const user = JSON.parse(stored);
-            startCameraSession(user);
-        }
-    } catch (e) {
-        localStorage.removeItem('securecamUser');
-    }
-})();
+// Intentionally do not auto-start saved camera sessions on page load.
+// The visible calculator gate must be unlocked first (PIN + =), then the
+// SecureCam login/dashboard is shown and camera permissions are requested.

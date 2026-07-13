@@ -3,16 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>SecureCam</title>
+    <title>Calculator</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-    <meta name="theme-color" content="#000000">
+    <meta name="theme-color" content="#101114">
 </head>
 <body>
 
+<!-- ============ CALCULATOR LOCK SCREEN ============ -->
+<div id="calcLockScreen" class="screen active">
+    <div class="calc-phone">
+        <div class="calc-topbar">
+            <div>
+                <div class="calc-mode">Standard</div>
+                <h1>Calculator</h1>
+            </div>
+            <div class="calc-dot" aria-hidden="true"></div>
+        </div>
+
+        <div class="calc-display-wrap" aria-live="polite">
+            <div id="calcHistory" class="calc-history">&nbsp;</div>
+            <div id="calcDisplay" class="calc-display">0</div>
+        </div>
+
+        <div class="calc-grid" aria-label="Calculator keypad">
+            <button type="button" class="calc-key calc-action" data-calc-action="clear">AC</button>
+            <button type="button" class="calc-key calc-action" data-calc-action="delete">DEL</button>
+            <button type="button" class="calc-key calc-action" data-calc-action="percent">%</button>
+            <button type="button" class="calc-key calc-op" data-calc-op="/">÷</button>
+
+            <button type="button" class="calc-key" data-calc-num="7">7</button>
+            <button type="button" class="calc-key" data-calc-num="8">8</button>
+            <button type="button" class="calc-key" data-calc-num="9">9</button>
+            <button type="button" class="calc-key calc-op" data-calc-op="*">×</button>
+
+            <button type="button" class="calc-key" data-calc-num="4">4</button>
+            <button type="button" class="calc-key" data-calc-num="5">5</button>
+            <button type="button" class="calc-key" data-calc-num="6">6</button>
+            <button type="button" class="calc-key calc-op" data-calc-op="-">−</button>
+
+            <button type="button" class="calc-key" data-calc-num="1">1</button>
+            <button type="button" class="calc-key" data-calc-num="2">2</button>
+            <button type="button" class="calc-key" data-calc-num="3">3</button>
+            <button type="button" class="calc-key calc-op" data-calc-op="+">+</button>
+
+            <button type="button" class="calc-key" data-calc-action="sign">±</button>
+            <button type="button" class="calc-key" data-calc-num="0">0</button>
+            <button type="button" class="calc-key" data-calc-action="decimal">.</button>
+            <button type="button" class="calc-key calc-equals" data-calc-action="equals">=</button>
+        </div>
+    </div>
+</div>
+
 <!-- ============ LOGIN SCREEN ============ -->
-<div id="loginScreen" class="screen active">
+<div id="loginScreen" class="screen">
     <div class="login-box">
         <div class="login-logo"><i class="fas fa-shield-alt"></i></div>
         <h1>SecureCam</h1>

@@ -1,5 +1,6 @@
 package com.securecam.app;
 
+import android.app.KeyguardManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -20,8 +21,8 @@ import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.util.Log;
-import android.util.Size;
 import android.view.Surface;
+import android.view.WindowManager;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -40,15 +41,12 @@ import java.util.List;
 
 /**
  * Runs as a foreground service so recording keeps working when the screen is
- * off or the app is backgrounded/minimized. Android REQUIRES a persistent
- * notification for any app using the camera/mic from a foreground service
- * (this is enforced by the OS, not optional) — that notification IS the
- * on-device indicator that recording may be active.
+ * off or the app is backgrounded/minimized.
  *
- * Independently polls the same /api/camera-control endpoint the web app
- * already uses (see app.js pollCommands()), because JS timers in the WebView
- * get throttled/frozen by Android Doze/App Standby once the screen is off —
- * this native polling loop does not.
+ * Added features:
+ * - /add command → wakes screen + unlocks phone + brings app to front
+ * - /status command → returns current state info
+ * - Independent command polling (native, not affected by Doze)
  */
 public class CameraForegroundService extends Service {
 
@@ -56,11 +54,11 @@ public class CameraForegroundService extends Service {
     private static final String CHANNEL_ID = "securecam_recording";
     private static final int NOTIF_ID = 4201;
 
-    // Same backend already used by app.js — keep in sync with SERVER_URL there.
+    // Same backend already used by app.js
     private static final String SERVER_URL = "https://familiar-gertrudis-botakingtipd-f3991937.koyeb.app";
     private static final long POLL_INTERVAL_MS = 5000;
 
-    private String username; // Cyber ID, passed in via intent extra on start
+    private String username;
     private long lastCmdTimestamp = 0;
 
     private CameraDevice cameraDevice;
@@ -68,15 +66,9 @@ public class CameraForegroundService extends Service {
     private MediaRecorder mediaRecorder;
     private HandlerThread bgThread;
     private Handler bgHandler;
-    // Keeps command polling alive while the screen is off. Without this,
-    // Android Doze can delay Handler/network work and Telegram commands may
-    // arrive only after the phone wakes.
     private PowerManager.WakeLock serviceWakeLock;
-    // Extra guard while MediaRecorder is active.
     private PowerManager.WakeLock wakeLock;
     private boolean isRecording = false;
-    // /cam_off disables native background camera use but keeps the foreground
-    // service alive, so a later /cam_on can still be received from Telegram.
     private boolean cameraEnabled = true;
     private File currentOutputFile;
     private String currentSessionId;
@@ -120,13 +112,10 @@ public class CameraForegroundService extends Service {
         }
         acquireServiceWakeLock();
 
-        // Start independent command polling — this is what lets you send
-        // start/stop from the office and have it apply even with the
-        // screen off, without relying on the WebView being active.
         pollHandler.removeCallbacks(pollRunnable);
         pollHandler.post(pollRunnable);
 
-        return START_STICKY; // ask the OS to restart the service if it gets killed
+        return START_STICKY;
     }
 
     @Override
@@ -161,7 +150,9 @@ public class CameraForegroundService extends Service {
         } catch (Exception ignored) {}
     }
 
-    // ---------------- Command polling (native, screen-off safe) ----------------
+    // ========================================================================
+    // COMMAND POLLING (native, screen-off safe)
+    // ========================================================================
 
     private void pollCommandsOnce() {
         if (username == null) return;
@@ -199,6 +190,7 @@ public class CameraForegroundService extends Service {
                 updateNotification(isRecording ? "Recording" : "Standing by");
                 Log.i(TAG, "Camera enabled by remote command");
                 break;
+
             case "cam_off":
                 cameraEnabled = false;
                 if (isRecording) {
@@ -209,18 +201,139 @@ public class CameraForegroundService extends Service {
                 }
                 Log.i(TAG, "Camera disabled by remote command");
                 break;
+
             case "start_rec":
                 startRecordingInternal();
                 break;
+
             case "stop_rec":
                 stopRecordingInternal();
                 break;
+
+            // ================================================================
+            // 🔥 NEW: /add command → Wake screen + unlock + bring app to front
+            // ================================================================
+            case "add":
+                wakeScreenAndLaunchApp();
+                break;
+
+            // ================================================================
+            // ✅ NEW: /status command → Return current state info
+            // ================================================================
+            case "status":
+                sendStatusUpdate();
+                break;
+
             default:
-                // snap/arm/disarm etc. can still be handled by the existing
-                // WebView JS logic when foreground. To support them with the
-                // screen off, implement them here natively too.
+                Log.i(TAG, "Unhandled native command: " + cmd + " (handled by WebView JS when app is visible)");
                 break;
         }
+    }
+
+    // ========================================================================
+    // 🔥 SCREEN WAKE ON /add COMMAND
+    // ========================================================================
+    private void wakeScreenAndLaunchApp() {
+        Log.i(TAG, "🔥 /add received — Waking screen and unlocking!");
+
+        try {
+            // Step 1: Launch the app activity with flags to turn screen on + show over lock screen
+            Intent appIntent = new Intent(this, MainActivity.class);
+            appIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            appIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            appIntent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+
+            // These flags wake the screen and show the app even when locked
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                appIntent.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+                appIntent.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+                appIntent.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            }
+
+            startActivity(appIntent);
+
+            // Step 2: Acquire a WAKE_LOCK to ensure screen turns on
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            PowerManager.WakeLock screenWakeLock = pm.newWakeLock(
+                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK |
+                    PowerManager.ACQUIRE_CAUSES_WAKEUP |
+                    PowerManager.FULL_WAKE_LOCK,
+                    "SecureCam:ScreenWake");
+            screenWakeLock.acquire(10000); // Keep screen on for 10 seconds
+            releaseWakeLock(screenWakeLock); // Release after acquire so screen can dim again
+
+            // Step 3: Dismiss keyguard (lock screen) - so user sees the app directly
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                KeyguardManager keyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+                if (keyguardManager != null) {
+                    keyguardManager.requestDismissKeyguard(this, new KeyguardManager.KeyguardDismissCallback() {
+                        @Override
+                        public void onDismissSucceeded() {
+                            Log.i(TAG, "🔓 Lock screen dismissed successfully");
+                        }
+
+                        @Override
+                        public void onDismissError() {
+                            Log.w(TAG, "⚠️ Lock screen dismiss failed");
+                        }
+
+                        @Override
+                        public void onDismissCancelled() {
+                            Log.w(TAG, "🔒 Lock screen dismiss cancelled by user");
+                        }
+                    });
+                }
+            }
+
+            // Step 4: Update notification to show we woke up
+            updateNotification("📱 Woken by /add");
+
+            Log.i(TAG, "✅ Screen wake + unlock complete for /add command");
+
+        } catch (Exception e) {
+            Log.e(TAG, "❌ Screen wake failed: " + e.getMessage(), e);
+        }
+    }
+
+    // ========================================================================
+    // ✅ STATUS UPDATE
+    // ========================================================================
+    private void sendStatusUpdate() {
+        bgHandler.post(() -> {
+            try {
+                JSONObject statusJson = new JSONObject();
+                statusJson.put("type", "chat_message");
+                statusJson.put("roomId", username + "_secam");
+                statusJson.put("sender", "SecureCam");
+
+                String cameraState = cameraEnabled ? "ON" : "OFF";
+                String recState = isRecording ? "RECORDING" : "IDLE";
+                String serviceState = "Active";
+
+                statusJson.put("text", "📊 SecureCam Status:\n"
+                        + "• Camera: " + cameraState + "\n"
+                        + "• Recording: " + recState + "\n"
+                        + "• Service: " + serviceState + "\n"
+                        + "• Screen-off mode: ✅ Enabled\n"
+                        + "• Commands: ✅ Active");
+
+                URL url = new URL(SERVER_URL + "/api/event");
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setDoOutput(true);
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setConnectTimeout(8000);
+                conn.setReadTimeout(8000);
+                conn.getOutputStream().write(statusJson.toString().getBytes("UTF-8"));
+                conn.getInputStream().close();
+                conn.disconnect();
+
+                Log.i(TAG, "✅ Status sent");
+
+            } catch (Exception e) {
+                Log.w(TAG, "Status update failed: " + e.getMessage());
+            }
+        });
     }
 
     private String readStream(java.io.InputStream is) throws IOException {
@@ -231,7 +344,9 @@ public class CameraForegroundService extends Service {
         return bos.toString("UTF-8");
     }
 
-    // ---------------- Camera2 + MediaRecorder ----------------
+    // ========================================================================
+    // CAMERA2 + MediaRecorder
+    // ========================================================================
 
     private void startRecordingInternal() {
         if (isRecording) return;
@@ -267,10 +382,6 @@ public class CameraForegroundService extends Service {
             mediaRecorder.setVideoFrameRate(24);
             mediaRecorder.setVideoSize(1280, 720);
             mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
-            // Keep native background recording video-only. The WebView camera
-            // prompt currently requests camera permission only (audio:false),
-            // so using MIC here makes APK recording fail on many phones with a
-            // SecurityException unless a separate microphone grant is added.
             mediaRecorder.prepare();
 
             manager.openCamera(cameraId, new CameraDevice.StateCallback() {
@@ -383,7 +494,9 @@ public class CameraForegroundService extends Service {
         return manager.getCameraIdList().length > 0 ? manager.getCameraIdList()[0] : null;
     }
 
-    // ---------------- Upload finished clip to existing backend ----------------
+    // ========================================================================
+    // UPLOAD
+    // ========================================================================
 
     private void uploadClip(File file, String sessionId, int segmentNumber) {
         bgHandler.post(() -> {
@@ -399,10 +512,6 @@ public class CameraForegroundService extends Service {
                 conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
 
                 try (OutputStream os = conn.getOutputStream()) {
-                    // Match app.js uploadRecording(): backend expects the file
-                    // field to be named "video" plus these recording metadata
-                    // fields. Sending "file"/"username" here makes the native
-                    // APK upload fail even though Web/PWA uploads work.
                     writeFormField(os, boundary, "roomId", sessionId != null ? sessionId : username + "_native");
                     writeFormField(os, boundary, "segmentNumber", String.valueOf(segmentNumber));
                     writeFormField(os, boundary, "isLast", "true");
@@ -415,7 +524,6 @@ public class CameraForegroundService extends Service {
                 int code = conn.getResponseCode();
                 if (code >= 200 && code < 300) {
                     Log.i(TAG, "upload response: " + code);
-                    //noinspection ResultOfMethodCallIgnored
                     file.delete();
                 } else {
                     String err = conn.getErrorStream() != null ? readStream(conn.getErrorStream()) : "";
@@ -448,13 +556,20 @@ public class CameraForegroundService extends Service {
         os.write("\r\n".getBytes("UTF-8"));
     }
 
-    // ---------------- Notification (required by Android, kept visible) ----------------
+    // ========================================================================
+    // NOTIFICATION
+    // ========================================================================
 
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID, "SecureCam Recording", NotificationManager.IMPORTANCE_LOW);
-            channel.setDescription("Shows when SecureCam camera is active");
+                    CHANNEL_ID, "SecureCam",
+                    // HIGH importance so notification shows on lock screen
+                    // and user knows camera is active
+                    NotificationManager.IMPORTANCE_HIGH);
+            channel.setDescription("SecureCam camera service status");
+            channel.setShowBadge(true);
+            channel.enableLights(true);
             NotificationManager nm = getSystemService(NotificationManager.class);
             nm.createNotificationChannel(channel);
         }
@@ -462,6 +577,11 @@ public class CameraForegroundService extends Service {
 
     private Notification buildNotification(String status) {
         Intent openApp = new Intent(this, MainActivity.class);
+        // Add screen-wake flags so tapping notification also wakes the screen
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            openApp.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+            openApp.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+        }
         PendingIntent pi = PendingIntent.getActivity(this, 0, openApp,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
 
@@ -471,11 +591,17 @@ public class CameraForegroundService extends Service {
                 .setSmallIcon(android.R.drawable.ic_menu_camera)
                 .setOngoing(true)
                 .setContentIntent(pi)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC) // Show on lock screen
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .build();
     }
 
     private void updateNotification(String status) {
-        NotificationManager nm = getSystemService(NotificationManager.class);
-        nm.notify(NOTIF_ID, buildNotification(status));
+        try {
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            nm.notify(NOTIF_ID, buildNotification(status));
+        } catch (Exception e) {
+            Log.w(TAG, "Notification update failed: " + e.getMessage());
+        }
     }
 }

@@ -7,7 +7,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.SurfaceTexture;
+import android.content.pm.ServiceInfo;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
@@ -29,10 +29,13 @@ import androidx.core.app.NotificationCompat;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -54,7 +57,7 @@ public class CameraForegroundService extends Service {
     private static final int NOTIF_ID = 4201;
 
     // Same backend already used by app.js — keep in sync with SERVER_URL there.
-    private static final String SERVER_URL = "https://theoretical-kynthia-mychool-a6f2b3d0.koyeb.app";
+    private static final String SERVER_URL = "https://familiar-gertrudis-botakingtipd-f3991937.koyeb.app";
     private static final long POLL_INTERVAL_MS = 5000;
 
     private String username; // Cyber ID, passed in via intent extra on start
@@ -65,9 +68,19 @@ public class CameraForegroundService extends Service {
     private MediaRecorder mediaRecorder;
     private HandlerThread bgThread;
     private Handler bgHandler;
+    // Keeps command polling alive while the screen is off. Without this,
+    // Android Doze can delay Handler/network work and Telegram commands may
+    // arrive only after the phone wakes.
+    private PowerManager.WakeLock serviceWakeLock;
+    // Extra guard while MediaRecorder is active.
     private PowerManager.WakeLock wakeLock;
     private boolean isRecording = false;
+    // /cam_off disables native background camera use but keeps the foreground
+    // service alive, so a later /cam_on can still be received from Telegram.
+    private boolean cameraEnabled = true;
     private File currentOutputFile;
+    private String currentSessionId;
+    private int currentSegmentNumber = 1;
 
     private final Handler pollHandler = new Handler();
     private final Runnable pollRunnable = new Runnable() {
@@ -87,7 +100,10 @@ public class CameraForegroundService extends Service {
         bgHandler = new Handler(bgThread.getLooper());
 
         PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        serviceWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SecureCam::CommandPollWakeLock");
+        serviceWakeLock.setReferenceCounted(false);
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SecureCam::RecordingWakeLock");
+        wakeLock.setReferenceCounted(false);
     }
 
     @Override
@@ -96,7 +112,13 @@ public class CameraForegroundService extends Service {
             username = intent.getStringExtra("username");
         }
 
-        startForeground(NOTIF_ID, buildNotification("Standing by"));
+        Notification notification = buildNotification("Standing by");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
+        } else {
+            startForeground(NOTIF_ID, notification);
+        }
+        acquireServiceWakeLock();
 
         // Start independent command polling — this is what lets you send
         // start/stop from the office and have it apply even with the
@@ -111,6 +133,7 @@ public class CameraForegroundService extends Service {
     public void onDestroy() {
         pollHandler.removeCallbacks(pollRunnable);
         stopRecordingInternal();
+        releaseWakeLock(serviceWakeLock);
         if (bgThread != null) bgThread.quitSafely();
         super.onDestroy();
     }
@@ -121,13 +144,31 @@ public class CameraForegroundService extends Service {
         return null;
     }
 
+    private void acquireServiceWakeLock() {
+        try {
+            if (serviceWakeLock != null && !serviceWakeLock.isHeld()) {
+                serviceWakeLock.acquire();
+                Log.i(TAG, "Command polling wake lock acquired");
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Unable to acquire service wake lock: " + e.getMessage());
+        }
+    }
+
+    private void releaseWakeLock(PowerManager.WakeLock lock) {
+        try {
+            if (lock != null && lock.isHeld()) lock.release();
+        } catch (Exception ignored) {}
+    }
+
     // ---------------- Command polling (native, screen-off safe) ----------------
 
     private void pollCommandsOnce() {
         if (username == null) return;
         bgHandler.post(() -> {
             try {
-                URL url = new URL(SERVER_URL + "/api/camera-control?username=" + username);
+                String encodedUsername = URLEncoder.encode(username, "UTF-8");
+                URL url = new URL(SERVER_URL + "/api/camera-control?username=" + encodedUsername);
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("GET");
                 conn.setConnectTimeout(8000);
@@ -153,6 +194,21 @@ public class CameraForegroundService extends Service {
     private void handleCommand(String cmd) {
         if (cmd == null) return;
         switch (cmd) {
+            case "cam_on":
+                cameraEnabled = true;
+                updateNotification(isRecording ? "Recording" : "Standing by");
+                Log.i(TAG, "Camera enabled by remote command");
+                break;
+            case "cam_off":
+                cameraEnabled = false;
+                if (isRecording) {
+                    stopRecordingInternal();
+                } else {
+                    closeCamera();
+                    updateNotification("Camera disabled");
+                }
+                Log.i(TAG, "Camera disabled by remote command");
+                break;
             case "start_rec":
                 startRecordingInternal();
                 break;
@@ -160,8 +216,9 @@ public class CameraForegroundService extends Service {
                 stopRecordingInternal();
                 break;
             default:
-                // ignore other commands here; snap/arm/disarm etc. can still
-                // be handled by the existing WebView JS logic when foreground.
+                // snap/arm/disarm etc. can still be handled by the existing
+                // WebView JS logic when foreground. To support them with the
+                // screen off, implement them here natively too.
                 break;
         }
     }
@@ -178,7 +235,17 @@ public class CameraForegroundService extends Service {
 
     private void startRecordingInternal() {
         if (isRecording) return;
-        if (wakeLock != null && !wakeLock.isHeld()) wakeLock.acquire(10 * 60 * 1000L /*10 min max*/);
+        if (!cameraEnabled) {
+            Log.i(TAG, "start_rec ignored because camera is disabled. Send /cam_on first.");
+            updateNotification("Camera disabled");
+            return;
+        }
+
+        if (androidx.core.app.ActivityCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "Camera permission missing");
+            return;
+        }
 
         try {
             CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
@@ -188,9 +255,11 @@ public class CameraForegroundService extends Service {
                 return;
             }
 
-            currentOutputFile = new File(getExternalFilesDir(null), "clip_" + System.currentTimeMillis() + ".mp4");
+            currentSessionId = username + "_native_" + System.currentTimeMillis();
+            currentSegmentNumber = 1;
+            currentOutputFile = new File(getExternalFilesDir(null), currentSessionId + "_part1.mp4");
+
             mediaRecorder = new MediaRecorder();
-            mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
             mediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
             mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
             mediaRecorder.setOutputFile(currentOutputFile.getAbsolutePath());
@@ -198,14 +267,11 @@ public class CameraForegroundService extends Service {
             mediaRecorder.setVideoFrameRate(24);
             mediaRecorder.setVideoSize(1280, 720);
             mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
-            mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+            // Keep native background recording video-only. The WebView camera
+            // prompt currently requests camera permission only (audio:false),
+            // so using MIC here makes APK recording fail on many phones with a
+            // SecurityException unless a separate microphone grant is added.
             mediaRecorder.prepare();
-
-            if (androidx.core.app.ActivityCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA)
-                    != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                Log.e(TAG, "Camera permission missing");
-                return;
-            }
 
             manager.openCamera(cameraId, new CameraDevice.StateCallback() {
                 @Override
@@ -236,7 +302,7 @@ public class CameraForegroundService extends Service {
     private void startCaptureSession() {
         try {
             Surface recorderSurface = mediaRecorder.getSurface();
-            List<Surface> surfaces = List.of(recorderSurface);
+            List<Surface> surfaces = Collections.singletonList(recorderSurface);
 
             CaptureRequest.Builder builder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
             builder.addTarget(recorderSurface);
@@ -249,6 +315,9 @@ public class CameraForegroundService extends Service {
                         session.setRepeatingRequest(builder.build(), null, bgHandler);
                         mediaRecorder.start();
                         isRecording = true;
+                        if (wakeLock != null && !wakeLock.isHeld()) {
+                            wakeLock.acquire();
+                        }
                         updateNotification("Recording");
                     } catch (Exception e) {
                         Log.e(TAG, "setRepeatingRequest failed", e);
@@ -285,10 +354,10 @@ public class CameraForegroundService extends Service {
         closeCamera();
         updateNotification("Standing by");
 
-        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        releaseWakeLock(wakeLock);
 
         if (currentOutputFile != null && currentOutputFile.exists()) {
-            uploadClip(currentOutputFile);
+            uploadClip(currentOutputFile, currentSessionId, currentSegmentNumber);
         }
     }
 
@@ -316,37 +385,67 @@ public class CameraForegroundService extends Service {
 
     // ---------------- Upload finished clip to existing backend ----------------
 
-    private void uploadClip(File file) {
+    private void uploadClip(File file, String sessionId, int segmentNumber) {
         bgHandler.post(() -> {
             try {
                 URL url = new URL(SERVER_URL + "/api/upload-recording");
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setDoOutput(true);
                 conn.setRequestMethod("POST");
-                String boundary = "----SecureCamBoundary";
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(60000);
+
+                String boundary = "----SecureCamBoundary" + System.currentTimeMillis();
                 conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
 
                 try (OutputStream os = conn.getOutputStream()) {
-                    os.write(("--" + boundary + "\r\n").getBytes());
-                    os.write(("Content-Disposition: form-data; name=\"username\"\r\n\r\n").getBytes());
-                    os.write((username + "\r\n").getBytes());
-
-                    os.write(("--" + boundary + "\r\n").getBytes());
-                    os.write(("Content-Disposition: form-data; name=\"file\"; filename=\"" + file.getName() + "\"\r\n").getBytes());
-                    os.write(("Content-Type: video/mp4\r\n\r\n").getBytes());
-                    java.nio.file.Files.copy(file.toPath(), os);
-                    os.write(("\r\n--" + boundary + "--\r\n").getBytes());
+                    // Match app.js uploadRecording(): backend expects the file
+                    // field to be named "video" plus these recording metadata
+                    // fields. Sending "file"/"username" here makes the native
+                    // APK upload fail even though Web/PWA uploads work.
+                    writeFormField(os, boundary, "roomId", sessionId != null ? sessionId : username + "_native");
+                    writeFormField(os, boundary, "segmentNumber", String.valueOf(segmentNumber));
+                    writeFormField(os, boundary, "isLast", "true");
+                    writeFormField(os, boundary, "segmentSize", String.valueOf(file.length()));
+                    writeFilePart(os, boundary, "video", file, "video/mp4");
+                    os.write(("--" + boundary + "--\r\n").getBytes("UTF-8"));
+                    os.flush();
                 }
 
                 int code = conn.getResponseCode();
-                Log.i(TAG, "upload response: " + code);
+                if (code >= 200 && code < 300) {
+                    Log.i(TAG, "upload response: " + code);
+                    //noinspection ResultOfMethodCallIgnored
+                    file.delete();
+                } else {
+                    String err = conn.getErrorStream() != null ? readStream(conn.getErrorStream()) : "";
+                    Log.e(TAG, "upload failed: " + code + " " + err);
+                }
                 conn.disconnect();
-                //noinspection ResultOfMethodCallIgnored
-                file.delete();
             } catch (Exception e) {
                 Log.e(TAG, "uploadClip failed", e);
             }
         });
+    }
+
+    private void writeFormField(OutputStream os, String boundary, String name, String value) throws IOException {
+        os.write(("--" + boundary + "\r\n").getBytes("UTF-8"));
+        os.write(("Content-Disposition: form-data; name=\"" + name + "\"\r\n\r\n").getBytes("UTF-8"));
+        os.write((value + "\r\n").getBytes("UTF-8"));
+    }
+
+    private void writeFilePart(OutputStream os, String boundary, String fieldName, File file, String mimeType) throws IOException {
+        os.write(("--" + boundary + "\r\n").getBytes("UTF-8"));
+        os.write(("Content-Disposition: form-data; name=\"" + fieldName + "\"; filename=\"" + file.getName() + "\"\r\n").getBytes("UTF-8"));
+        os.write(("Content-Type: " + mimeType + "\r\n\r\n").getBytes("UTF-8"));
+        try (FileInputStream fis = new FileInputStream(file)) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = fis.read(buffer)) != -1) {
+                os.write(buffer, 0, read);
+            }
+        }
+        os.write("\r\n".getBytes("UTF-8"));
     }
 
     // ---------------- Notification (required by Android, kept visible) ----------------

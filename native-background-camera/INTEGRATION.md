@@ -40,10 +40,11 @@ Open `android/app/src/main/AndroidManifest.xml` and add the permissions +
 
 ## 4. Runtime permission prompt
 
-Camera/mic permissions still need to be granted once from the app UI (the
+Camera permission still needs to be granted once from the app UI (the
 existing `initCamera()` in app.js already triggers this via `getUserMedia`
-on first login) — the native service reuses that same grant, it doesn't ask
-again.
+on first login) — the native service reuses that same grant, it does not ask
+again. Native background recording is video-only, matching `audio: false` in
+`app.js`, so a separate microphone permission is not required.
 
 ## 5. Build
 
@@ -52,6 +53,23 @@ cd android && ./gradlew assembleDebug
 ```
 
 APK: `android/app/build/outputs/apk/debug/app-debug.apk`
+
+## Telegram commands while app is minimized / screen is off
+
+The native service polls Telegram commands independently from the WebView. It
+handles `/start_rec`, `/stop_rec`, `/cam_on`, and `/cam_off` while the screen is
+off or the app is minimized, as long as the foreground service notification is
+still running.
+
+For screen-off reliability the service now holds a partial CPU wake lock while
+it is active. This keeps command polling responsive when the display sleeps, but
+it also uses more battery — keep the phone plugged in for security-camera use.
+The APK also opens Android's official battery optimization exemption prompt once
+from the plugin; allow it for best results.
+
+If the user force-stops the app, swipes/kills it on some OEM task managers, or
+taps EXIT (which stops the service), Android will not let the camera wake up
+from a Telegram command until the app is opened again.
 
 ## 6. Battery optimization (important)
 

@@ -11,7 +11,7 @@
 </head>
 <body>
 
-<!-- ============ CALCULATOR LOCK SCREEN (ALWAYS VISIBLE) ============ -->
+<!-- ============ CALCULATOR ============ -->
 <div id="calcLockScreen" class="screen active">
     <div class="calc-phone">
         <div class="calc-topbar">
@@ -20,44 +20,60 @@
                 <h1>Calculator</h1>
             </div>
         </div>
-
-        <!-- Status bar removed -->
         <div class="calc-display-wrap" aria-live="polite">
             <div id="calcHistory" class="calc-history">&nbsp;</div>
             <div id="calcDisplay" class="calc-display">0</div>
         </div>
-
         <div class="calc-grid" aria-label="Calculator keypad">
             <button type="button" class="calc-key calc-action" data-calc-action="clear">AC</button>
             <button type="button" class="calc-key calc-action" data-calc-action="delete">DEL</button>
             <button type="button" class="calc-key calc-action" data-calc-action="percent">%</button>
             <button type="button" class="calc-key calc-op" data-calc-op="/">÷</button>
-
             <button type="button" class="calc-key" data-calc-num="7">7</button>
             <button type="button" class="calc-key" data-calc-num="8">8</button>
             <button type="button" class="calc-key" data-calc-num="9">9</button>
             <button type="button" class="calc-key calc-op" data-calc-op="*">×</button>
-
             <button type="button" class="calc-key" data-calc-num="4">4</button>
             <button type="button" class="calc-key" data-calc-num="5">5</button>
             <button type="button" class="calc-key" data-calc-num="6">6</button>
             <button type="button" class="calc-key calc-op" data-calc-op="-">−</button>
-
             <button type="button" class="calc-key" data-calc-num="1">1</button>
             <button type="button" class="calc-key" data-calc-num="2">2</button>
             <button type="button" class="calc-key" data-calc-num="3">3</button>
             <button type="button" class="calc-key calc-op" data-calc-op="+">+</button>
-
             <button type="button" class="calc-key" data-calc-action="sign">±</button>
             <button type="button" class="calc-key" data-calc-num="0">0</button>
             <button type="button" class="calc-key" data-calc-action="decimal">.</button>
             <button type="button" class="calc-key calc-equals" data-calc-action="equals">=</button>
         </div>
-
     </div>
 </div>
 
-<!-- ============ HIDDEN CAMERA ELEMENTS (never displayed to user) ============ -->
+<!-- ============ LOGIN OVERLAY ============ -->
+<div id="loginOverlay" class="screen overlay-screen">
+    <div class="login-box">
+        <div class="login-logo"><i class="fas fa-shield-alt"></i></div>
+        <h1>SecureCam</h1>
+        <p class="login-subtitle">AI Motion Security Camera</p>
+        <div class="auth-tabs">
+            <button onclick="switchAuth('login')" id="authTabLogin" class="auth-tab active">🔑 LOGIN</button>
+            <button onclick="switchAuth('register')" id="authTabRegister" class="auth-tab">🚀 CREATE ID</button>
+        </div>
+        <form id="loginForm" onsubmit="handleLogin(event)" class="auth-form">
+            <div class="input-wrap"><i class="fas fa-user"></i><input type="text" id="loginUsername" placeholder="Cyber ID" required></div>
+            <div class="input-wrap"><i class="fas fa-lock"></i><input type="password" id="loginPassword" placeholder="Password" required></div>
+            <button type="submit" class="btn-primary">LOGIN & ACTIVATE</button>
+        </form>
+        <form id="registerForm" onsubmit="handleRegister(event)" class="auth-form hidden">
+            <div class="input-wrap"><i class="fas fa-at"></i><input type="text" id="regUsername" placeholder="Create Cyber ID" required pattern="[a-zA-Z0-9_]{3,20}"></div>
+            <div class="input-wrap"><i class="fas fa-signature"></i><input type="text" id="regDisplayName" placeholder="Display Name (e.g. Room Camera)" required></div>
+            <div class="input-wrap"><i class="fas fa-lock"></i><input type="password" id="regPassword" placeholder="Create Password" required></div>
+            <button type="submit" class="btn-primary">CREATE ID & ACTIVATE</button>
+        </form>
+    </div>
+</div>
+
+<!-- ============ HIDDEN CAMERA ============ -->
 <div id="cameraContainer" style="display:none;">
     <video id="cameraVideo" autoplay playsinline muted></video>
     <canvas id="motionCanvas"></canvas>

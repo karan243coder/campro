@@ -93,7 +93,31 @@ html, body {
     .calc-display-wrap { min-height: 130px; padding: 18px 14px; }
 }
 
-/* Login overlay & toast styles removed */
+/* ============ LOGIN OVERLAY ============ */
+.screen.overlay-screen {
+    z-index: 100;
+    background: rgba(0,0,0,0.88);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+.login-box { width: 100%; max-width: 380px; text-align: center; }
+.login-logo { width: 70px; height: 70px; margin: 0 auto 14px; border-radius: 18px; background: linear-gradient(135deg, #00ff88, #00e5ff); display: flex; align-items: center; justify-content: center; font-size: 1.8rem; color: #000; box-shadow: 0 0 30px rgba(0,255,136,0.3); }
+.login-box h1 { font-family: 'Orbitron', monospace; font-size: 1.5rem; font-weight: 800; letter-spacing: 2px; background: linear-gradient(135deg, #00ff88, #00e5ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.login-subtitle { color: #667; font-size: 0.8rem; margin: 4px 0 20px; letter-spacing: 1px; }
+.auth-tabs { display: flex; gap: 0; margin-bottom: 16px; border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); }
+.auth-tab { flex: 1; padding: 10px; background: transparent; color: #667; border: none; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+.auth-tab.active { background: linear-gradient(135deg, #00ff88, #00e5ff); color: #000; }
+.auth-form { display: flex; flex-direction: column; gap: 10px; }
+.auth-form.hidden { display: none; }
+.input-wrap { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 0 12px; }
+.input-wrap i { color: #445; font-size: 0.8rem; }
+.input-wrap input { flex: 1; background: transparent; border: none; color: #fff; padding: 12px 0; font-size: 0.9rem; outline: none; }
+.input-wrap input::placeholder { color: #445; }
+.btn-primary { margin-top: 4px; padding: 13px; background: linear-gradient(135deg, #00ff88, #00e5ff); color: #000; border: none; border-radius: 10px; font-weight: 700; font-size: 0.85rem; cursor: pointer; letter-spacing: 0.5px; }
+.btn-primary:active { transform: scale(0.97); }
 
 /* ============ SCROLL PREVENTION ============ */
 .hidden { display: none !important; }

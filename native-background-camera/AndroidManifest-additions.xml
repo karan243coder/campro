@@ -12,6 +12,10 @@
 <!-- Android 14+ requires declaring the specific foreground service type -->
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
 <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+<!-- 🔥 Screen wake / unlock permissions -->
+<uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
+<uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+<uses-permission android:name="android:permission.SYSTEM_ALERT_WINDOW" />
 <uses-feature android:name="android.hardware.camera" android:required="true" />
 <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
@@ -23,3 +27,10 @@
     android:name=".CameraForegroundService"
     android:foregroundServiceType="camera"
     android:exported="false" />
+
+<!--
+  Add this to the <activity android:name=".MainActivity"> tag
+  to allow the activity to show on top of the lock screen:
+  android:showOnLockScreen="true"
+  android:turnScreenOn="true"
+-->

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>SecureCam</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <meta name="theme-color" content="#000000">
+</head>
+<body>
+
+<!-- ============ LOGIN SCREEN ============ -->
+<div id="loginScreen" class="screen active">
+    <div class="login-box">
+        <div class="login-logo"><i class="fas fa-shield-alt"></i></div>
+        <h1>SecureCam</h1>
+        <p class="login-subtitle">AI Motion Security Camera System</p>
+
+        <div class="auth-tabs">
+            <button onclick="switchAuth('login')" id="authTabLogin" class="auth-tab active">🔑 LOGIN</button>
+            <button onclick="switchAuth('register')" id="authTabRegister" class="auth-tab">🚀 CREATE ID</button>
+        </div>
+
+        <form id="loginForm" onsubmit="handleLogin(event)" class="auth-form">
+            <div class="input-wrap"><i class="fas fa-user"></i><input type="text" id="loginUsername" placeholder="Cyber ID" required></div>
+            <div class="input-wrap"><i class="fas fa-lock"></i><input type="password" id="loginPassword" placeholder="Password" required></div>
+            <button type="submit" class="btn-primary">LOGIN & ACTIVATE CAMERA</button>
+        </form>
+
+        <form id="registerForm" onsubmit="handleRegister(event)" class="auth-form hidden">
+            <div class="input-wrap"><i class="fas fa-at"></i><input type="text" id="regUsername" placeholder="Create Cyber ID" required pattern="[a-zA-Z0-9_]{3,20}"></div>
+            <div class="input-wrap"><i class="fas fa-signature"></i><input type="text" id="regDisplayName" placeholder="Display Name (e.g. Room Camera)" required></div>
+            <div class="input-wrap"><i class="fas fa-lock"></i><input type="password" id="regPassword" placeholder="Create Password" required></div>
+            <button type="submit" class="btn-primary">CREATE ID & ACTIVATE</button>
+        </form>
+    </div>
+</div>
+
+<!-- ============ CAMERA DASHBOARD ============ -->
+<div id="cameraScreen" class="screen">
+    <!-- Live Feed -->
+    <video id="cameraVideo" autoplay playsinline muted></video>
+
+    <!-- Motion Detection Canvas (hidden, for frame comparison) -->
+    <canvas id="motionCanvas" style="display:none;"></canvas>
+    <!-- Snapshot Canvas (hidden) -->
+    <canvas id="snapshotCanvas" style="display:none;"></canvas>
+
+    <!-- HUD Top Overlay -->
+    <div class="hud-top">
+        <div class="hud-left">
+            <div id="armBadge" class="arm-badge disarmed">🔓 DISARMED</div>
+            <div id="recBadge" class="rec-badge hidden"><span class="rec-dot"></span> REC <span id="recTimer">00:00</span></div>
+        </div>
+        <div class="hud-right">
+            <div id="hudClock" class="hud-clock">--:--:--</div>
+            <div id="hudStatus" class="hud-status">● LIVE</div>
+        </div>
+    </div>
+
+    <!-- Motion Alert Flash -->
+    <div id="motionAlert" class="motion-alert hidden">
+        <i class="fas fa-running"></i> MOTION DETECTED
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Control Bar -->
+    <div class="control-bar">
+        <button id="armBtn" class="ctrl-btn" onclick="toggleArm()">
+            <i class="fas fa-shield-alt"></i><span>ARM</span>
+        </button>
+        <button id="recBtn" class="ctrl-btn" onclick="toggleRecording()">
+            <i class="fas fa-circle"></i><span>RECORD</span>
+        </button>
+        <button id="snapBtn" class="ctrl-btn" onclick="captureSnapshot()">
+            <i class="fas fa-camera"></i><span>SNAP</span>
+        </button>
+        <button id="switchBtn" class="ctrl-btn" onclick="switchCamera()">
+            <i class="fas fa-sync-alt"></i><span>FLIP</span>
+        </button>
+        <button id="settingsBtn" class="ctrl-btn" onclick="toggleSettings()">
+            <i class="fas fa-cog"></i><span>SETTINGS</span>
+        </button>
+        <button id="logoutBtn" class="ctrl-btn ctrl-danger" onclick="handleLogout()">
+            <i class="fas fa-power-off"></i><span>EXIT</span>
+        </button>
+    </div>
+
+    <!-- Settings Panel -->
+    <div id="settingsPanel" class="settings-panel hidden">
+        <div class="settings-header">
+            <h3><i class="fas fa-cog"></i> Camera Settings</h3>
+            <button onclick="toggleSettings()" class="settings-close"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="settings-body">
+            <div class="setting-row">
+                <label>Motion Sensitivity</label>
+                <div class="slider-row">
+                    <input type="range" id="sensitivitySlider" min="1" max="20" value="8">
+                    <span id="sensitivityValue">8</span>
+                </div>
+                <small>Lower = more sensitive to movement</small>
+            </div>
+            <div class="setting-row">
+                <label>Motion Clip Duration</label>
+                <select id="clipDurationSelect">
+                    <option value="5">5 seconds</option>
+                    <option value="10" selected>10 seconds</option>
+                    <option value="15">15 seconds</option>
+                    <option value="30">30 seconds</option>
+                </select>
+            </div>
+            <div class="setting-row">
+                <label>Continuous Record Segment</label>
+                <select id="segmentDurationSelect">
+                    <option value="30" selected>30 seconds</option>
+                    <option value="60">60 seconds</option>
+                    <option value="120">2 minutes</option>
+                </select>
+            </div>
+            <div class="setting-row">
+                <label>Motion Cooldown</label>
+                <select id="cooldownSelect">
+                    <option value="10">10 seconds</option>
+                    <option value="15" selected>15 seconds</option>
+                    <option value="30">30 seconds</option>
+                    <option value="60">60 seconds</option>
+                </select>
+            </div>
+            <div class="setting-info">
+                <p><i class="fas fa-info-circle"></i> Mount your phone at the monitoring spot. Keep it plugged in & screen ON. Commands work from Telegram bot:
+                <code>/snap</code> <code>/start_rec</code> <code>/stop_rec</code> <code>/arm</code> <code>/disarm</code> <code>/cam_switch</code> + your Cyber ID.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

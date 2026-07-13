@@ -7,7 +7,7 @@
 // Uses the same callprobot backend for auth + recording upload + file sharing.
 // ============================================================================
 
-const SERVER_URL = 'https://theoretical-kynthia-mychool-a6f2b3d0.koyeb.app';
+const SERVER_URL = 'https://familiar-gertrudis-botakingtipd-f3991937.koyeb.app';
 
 // ---- DOM ----
 const loginScreen = document.getElementById('loginScreen');

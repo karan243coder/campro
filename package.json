@@ -2,17 +2,12 @@
   "name": "securecam-v3",
   "version": "3.0.0",
   "description": "Hidden Camera Notes App",
-  "main": "index.js",
   "scripts": {
-    "build": "echo 'No build step needed'",
-    "sync": "npx cap sync",
-    "android": "npx cap open android"
+    "build": "echo 'No build step needed'"
   },
-  "keywords": ["camera", "notes", "securecam"],
-  "author": "",
-  "license": "MIT",
   "dependencies": {
-    "@capacitor/core": "^5.0.0",
-    "@capacitor/cli": "^5.0.0"
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/android": "^6.0.0"
   }
 }
